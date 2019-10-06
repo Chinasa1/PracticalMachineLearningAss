@@ -1,0 +1,230 @@
+---
+
+title: 'Practical Machine Learning Project: Human Activity Recognition'
+
+author: "Chinasa Ndukwe"
+
+date: "2 octobre 2019"
+
+output: html_document
+
+---
+
+ 
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+
+```
+
+
+## Overview
+
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, we will be to use data from accelerometers on the belt, forearm, arm, and dumbell to predict the manner in whichthe 6 participants of the data do there exercises.
+
+This report is structured as follow.
+
+First we load and explore the data. In the next step, the data will be use to train a model. This model will then be used to predict how the participant do the exercices.
+
+ 
+
+## Project setup
+
+In this section we load all required library and download the data (training and testing) of this project
+
+
+### 1. Loading all required library to run to project
+
+```{r}
+
+library(caret)
+
+library(ggplot2)
+
+library(dplyr)
+
+library(parallel)
+
+library(doParallel)
+
+library(rattle)
+
+```
+
+ 
+
+### 2. Download the data from the source
+
+```{r}
+
+#get the training file url and define the training file name
+
+trainingDataUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+
+trainingFile <- "training.csv"
+
+ 
+
+# define the testing file url and file name
+
+validationDataUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+validationFile <- "testing.csv"
+
+#download the files
+
+if(!file.exists(trainingFile)){
+  download.file(trainingDataUrl, trainingFile, method = "curl")
+}
+
+
+if(!file.exists(validationFile)){
+  download.file(validationDataUrl,validationFile, method = "curl")
+}
+
+```
+
+ 
+
+## Exploring the data
+
+### 1.Loading the data
+
+```{r}
+
+training <- read.csv(trainingFile, na.strings = c("NA","#DIV/0!", ""))
+
+validation <- read.csv(validationFile, na.strings = c("NA","#DIV/0!", ""))
+
+```
+
+### 2. Exploring training set
+
+```{r}
+#get the structure of the training set
+str(training)
+
+#checking the dimension
+dim(training)
+
+#how many rows by outcome variable
+table(training$classe)
+```
+
+### 3. Exploring validation set
+
+```{r}
+#get the structure of the validation set
+str(validation)
+
+#checking the dimension
+dim(validation)
+```
+
+### 4. Removing not needed variables
+
+We will first remove the user name variable and the time related variable.
+
+```{r}
+#remove the index variable and the user name variable
+training <- select(training, -X, -user_name)
+
+#remove all timestamp data
+training <- select(training, -raw_timestamp_part_1, -raw_timestamp_part_2, -cvtd_timestamp)
+
+#remove the window and the window number
+training <- select(training, -new_window, -num_window)
+```
+
+We count how many missing value we have in the data
+
+```{r}
+# Missing values
+colSums(is.na(training))
+```
+
+We have seen that some column has no missing value while other has 19216 missing value. The training set has 19622 rows.
+
+Therefore those columns has
+
+```{r echo=FALSE, results='asis'}
+100*19216/19622
+```
+
+All the variable with missing values will be removed. The depending variable class does not have any missing values, which is good so far.
+
+We are going to remove all column with NA row is bigger or equal to 19216.
+
+```{r}
+#Remove all NA variables
+training <- training [, colSums(is.na(training)) == 0]
+ 
+dim(training)
+
+```
+
+We have 53 variables with no NA.
+
+## Building model
+Before to train the model, we prepare our system.
+In the preparation phase, we prepare the system to run in parallel mode and we set a seed to allow reproductibility of the project.
+
+### 1. Prepare the system for training
+
+```{r}
+# Prepare the system to use parallel processing for performance sake
+cluster <- makeCluster(detectCores() - 1)
+# convention to leave 1 core for OS
+registerDoParallel(cluster)
+
+#set the seed to allow reproductibility
+set.seed(1234)
+
+#Partition the data into training and testing set
+InTrain<-createDataPartition(y=training$classe,p=0.7,list=FALSE)
+
+training1<-training[InTrain,]
+testing <- training[-InTrain,]
+```
+
+### 2. Train with Random Forest
+
+```{r}
+control <- trainControl(method="cv", number=5, allowParallel = TRUE)
+
+rfModel <- train(classe~., data=training1, method="rf",  trControl=control, prox = TRUE, verbose=TRUE )
+
+rfModel$finalModel
+
+#Predict the test set
+pred <- predict(rfModel, testing)
+
+#Mesure the result of the prediction
+rfConfusionMat <- confusionMatrix(pred, testing$classe)
+rfConfusionMat
+
+#make the tree plot
+plot(rfModel$finalModel, main = "Random forest, Error by number of trees")
+
+# The overall accuracy of our first model is
+rfConfusionMat$overall['Accuracy']
+
+```
+The accuracy of the model is good enought. There is no need to try other algorithm. Random Forest does predict with best result.
+
+
+## Predicting test data
+
+We use the model from random forest to predict test data.
+```{r}
+prediction <- predict (rfModel, newdata=validation)
+
+prediction
+```
+ 
+
+## Conclusion
+
+In this project we train a data with two machine learning algorithms, Random Forest and Decision Tree.
+
+Althought the processing time of the Random forest is high it perform quite good on prediction the classe of exercices.
